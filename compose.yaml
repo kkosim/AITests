@@ -1,0 +1,67 @@
+version: "3.9"
+
+name: legal-ai
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - C:/Users/Kosim/.ollama:/root/.ollama
+    # Профиль DEV (на ноуте) — без GPU.
+    # На сервере с GPU раскомментируй блок ниже (profile train)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: ["gpu"]
+    profiles: ["dev", "train"]
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    container_name: legal-app
+    depends_on:
+      - ollama
+    environment:
+      # Ollama доступен по DNS-имени сервиса в сети compose
+      OLLAMA_URL: http://ollama:11434/api/generate
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data/docs:/data/docs
+      - ./data/outputs:/data/outputs
+      - ./data/hf-cache:/data/hf-cache
+    working_dir: /app
+    profiles: ["dev"]
+
+  trainer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.trainer
+    container_name: legal-trainer
+    depends_on:
+      - ollama
+    environment:
+      HUGGINGFACE_HUB_CACHE: /data/hf-cache
+      HF_HOME: /data/hf-cache
+      TRANSFORMERS_CACHE: /data/hf-cache
+      # Добавь сюда HF_TOKEN, если нужна авторизация на модели:
+      # HF_TOKEN: ${HF_TOKEN}
+    volumes:
+      - ./data/docs:/data/docs
+      - ./data/outputs:/data/outputs
+      - ./data/hf-cache:/data/hf-cache
+    # ВКЛЮЧАЕМ GPU НА СЕРВЕРЕ:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    profiles: ["train"]
+
+volumes:
+  ollama-models:
